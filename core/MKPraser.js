@@ -116,37 +116,6 @@ class MKPraser{
         return Start(char);
         
     }
-        /* 工厂模式 */
-        // const ModelFactoryOfDone = function(model, type1 , type2='TEXT'){
-        //     return function(char){
-        //         token.push(char);
-        //         switch(char){
-        //             case model :
-        //                 emitToken(type1,token.join(''));
-        //                 token = [];
-        //                 return Start;
-        //             default : 
-        //                 token.pop();
-        //                 emitToken(type2,token.join(''));
-        //                 token = [];
-        //                 Start(char);
-        //         }
-        //     }
-        // }
-        // const ModelFactoryOfDoing = function(model , state, type2='TEXT'){
-        //     return function(char){
-        //         token.push(char);
-        //         switch(char){
-        //             case model :
-        //                 return state; 
-        //             default : 
-        //                 token.pop();
-        //                 emitToken(type2,token.join(''));
-        //                 token = [];
-        //                 Start(char);
-        //         }
-        //     }
-        // }
         /* Head */
         //Head1-Head6简化为一个函数
         const Head = function(char){
@@ -384,7 +353,7 @@ class MKPraser{
        let input = this.data.split('');
        for(let char of input){
             state = state(char);
-            console.log('proceeding...');
+            console.log('proceeding...')
        }
    }
 }
