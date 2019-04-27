@@ -21,4 +21,7 @@ rl.on('line',(input)=>{
     let mkp = new MKPraser(data);
     mkp.lexicalAnalysis();
     console.log(mkp.getTokens());
+    mkp.optimizeToken();
+   // console.log(mkp.getTokens());
 })
+

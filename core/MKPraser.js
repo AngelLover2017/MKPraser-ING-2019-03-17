@@ -52,12 +52,16 @@ class MKPraser{
                         return AltlinkLeft;
                     case '!' : 
                         return ImgBegin;
+                    case '\t':
+                        emitToken('\t',char);
+                        token = [];
+                        return Start;
                     case '\n' : 
-                        emitToken('NEWLINE',char);
+                        emitToken('\n',char);
                         token = [];
                         return Start;
                     case '\r' : 
-                        emitToken('ENTER',char);
+                        emitToken('\r',char);
                         token = [];
                         return Start; 
                     case '&' : 
@@ -74,7 +78,7 @@ class MKPraser{
        /* Text */
        const Text = function(char){
         token.push(char);
-        if(/[^\#\>0-9\+\_\*\-\`\<\[\]\(\)\!\n\r\&\\]/.test(char)){
+        if(/[^\#\>0-9\+\_\*\-\`\<\[\]\(\)\!\n\r\t\&\\]/.test(char)){
             return Text;
         }else if(char == ']'){
             return AltlinkCenter;
@@ -82,30 +86,30 @@ class MKPraser{
         else if(char == '>'){
             let value = token.join('');
             if(/^\<(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?\>$/.test(value)){
-                emitToken('LINKLEFT',token[0]);
+                emitToken('<',token[0]);
                 emitToken('URL',token.slice(1,token.length-1).join(''));
-                emitToken('LINKRIGHT',token[token.length-1]);
+                emitToken('>',token[token.length-1]);
                 token = [];
                 return Start;
             }
         }else if(char == ')'){
             let value = token.join('');
             if(/^\!\[[^\#\>0-9\+\_\*\-\`\<\[\]\(\)\!\n\r\&\\]+\]\((https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?\)$/.test(value)){
-                emitToken('IMGBEGIN','!');
-                emitToken('ALTLINKLEFT','[');
+                emitToken('!','!');
+                emitToken('[','[');
                 emitToken('TEXT',token.slice(2,token.indexOf(']')).join(''));
-                emitToken('ALTLINKCENTER','](');
-                emitToken('URL',token.slice(token.indexOf('('),token.length-1));
-                emitToken('ALTLINKRIGHT',')');
+                emitToken('](','](');
+                emitToken('URL',token.slice(token.indexOf('(')+1,token.length-1).join(''));
+                emitToken(')',')');
                 token = [];
                 return Start;
             }
-            if(/^\[[^\#\>0-9\+\_\*\-\`\<\[\]\(\)\!\n\r\&\\]+\]\((https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?\)$/.test(value)){
-                emitToken('ALTLINKLEFT','[');
+            if(/^\[[^\#\>0-9\+\_\*\-\`\<\[\]\(\)\!\n\r\t\&\\]+\]\((https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?\)$/.test(value)){
+                emitToken('[','[');
                 emitToken('TEXT',token.slice(1,token.indexOf(']')).join(''));
-                emitToken('ALTLINKCENTER','](');
-                emitToken('URL',token.slice(token.indexOf('('),token.length-1));
-                emitToken('ALTLINKRIGHT',')');
+                emitToken('](','](');
+                emitToken('URL',token.slice(token.indexOf('(')+1,token.length-1).join(''));
+                emitToken(')',')');
                 token = [];
                 return Start;
             }
@@ -142,7 +146,7 @@ class MKPraser{
             token.push(char);
             switch(char){
                 case ' ' :
-                    emitToken('QUOTE',token.join(''));
+                    emitToken('>>',token.join(''));
                     token = [];
                     return Start;
                 default : 
@@ -157,7 +161,7 @@ class MKPraser{
             token.push(char);
             switch(char){
                 case ' ' :
-                    emitToken('OLIST',token.join(''));
+                    emitToken('OL',token.join(''));
                     token = [];
                     return Start;
                 default : 
@@ -184,7 +188,7 @@ class MKPraser{
             token.push(char);
             switch(char){
                 case ' ' :
-                    emitToken('ULIST',token.join(''));
+                    emitToken('UL',token.join(''));
                     token = [];
                     return Start;
                 default : 
@@ -199,12 +203,25 @@ class MKPraser{
             token.push(char);
             switch(char){
                 case '_' :
-                    emitToken('STRONG',token.join(''));
+                    return EmStrong;
+                default : 
+                    token.pop();
+                    emitToken('EM',token.join(''));
+                    token = [];
+                    return Start(char);
+            }
+        }
+        /* EmStrong */
+        const EmStrong = function(char){
+            token.push(char);
+            switch(char){
+                case '_' : 
+                    emitToken('EMSTRONG' , token.join(''));
                     token = [];
                     return Start;
                 default : 
                     token.pop();
-                    emitToken('EM',token.join(''));
+                    emitToken('STRONG',token.join(''));
                     token = [];
                     return Start(char);
             }
@@ -217,16 +234,18 @@ class MKPraser{
                     return EmUlistDivideline;
                 case '-' : 
                     return EmUlistDivideline;
+                case '*' : 
+                    return EmUlistDivideline;
                 default : 
                     token.pop();
                     let value = token.join('');
                     if(/^\* $/.test(value)){
-                        emitToken('ULIST',value);
-                    }else if(/\*( \*){2,}/.test(char) || /\*{3,}/.test(char)){
+                        emitToken('UL',value);
+                    }else if(/\*( \*){2,}/.test(value) || /\*{3,}/.test(value)){
                         emitToken('DIVIDELINE',value);
-                    }else if(/^\* *$/.test(char)){
+                    }else if(/^\* *$/.test(value)){
                         emitToken('EM',value);
-                    }else if(/^\*\* *$/.test(char)){
+                    }else if(/^\*\* *$/.test(value)){
                         emitToken('STRONG',value);
                     }else{
                         emitToken('TEXT',value);
@@ -247,8 +266,8 @@ class MKPraser{
                     token.pop();
                     let value = token.join('');
                     if(/^- $/.test(value)){
-                        emitToken('ULIST',value);
-                    }else if(/-( -){2,}/.test(char) || /-{3,}/.test(char)){
+                        emitToken('UL',value);
+                    }else if(/-( -){2,}/.test(value) || /-{3,}/.test(value)){
                         emitToken('DIVIDELINE',value);
                     }else{
                         emitToken('TEXT',value);
@@ -262,7 +281,7 @@ class MKPraser{
             token.push(char);
             switch(char){
                 case '`' :
-                    emitToken('BLOCKCODE',token.join(''));
+                    emitToken('```',token.join(''));
                     token = [];
                     return Start;
                 default : 
@@ -279,7 +298,7 @@ class MKPraser{
                     return Code2; 
                 default : 
                     token.pop();
-                    emitToken('INLINECODE',token.join(''));
+                    emitToken('`',token.join(''));
                     token = [];
                     return Start(char);
             }
@@ -355,6 +374,100 @@ class MKPraser{
             state = state(char);
             console.log('proceeding...')
        }
+   }
+   /* 
+    * Token流序列优化处理
+    */
+   optimizeToken(){
+        let tokens = [];
+        let cache = [];
+        let storeCache = function(word){
+            cache.push(word);
+        }
+        let emitToken = function(type , token){
+            tokens.push({
+                type : type,
+                token : token
+            })
+        }
+        // let replaceTokens = function(type,value){
+        //     let val = '';
+        //     cache.forEach((word)=>{
+        //         val+=word.token
+        //     })
+        //     tokens.splice(cache.shift().index, cache.length , {
+        //         type : type,
+        //         token : val
+        //     })
+        // }
+        //开始扫描token流序列
+        let start = function(word){
+            storeCache(word);
+            switch(word.type){
+                case 'TEXT' :
+                    return mergeText;
+                case '\r' :
+                    return newLine;
+                case '```' : 
+                    tokens.push(word);
+                    cache = [];
+                    return code;
+                default : 
+                    cache = [];
+                    tokens.push(word);
+                    return start;
+            }
+        }
+        //rule1 [mergeText] : 多个TEXT文本类型可以合并为一个TEXT合并
+        let mergeText = function(word){
+            storeCache(word);
+            switch(word.type){
+                case 'TEXT' : 
+                    return mergeText;
+                default : 
+                    cache.pop();
+                    //合并
+                    let val = '';
+                    for(let word of cache){
+                        val += word.token;
+                    }
+                    emitToken('TEXT',val);
+                    cache = [];
+                    return start(word);
+            }
+        }
+        // rule2 [newLine] :  \r\n可以合并为一个分隔不同行的标识 “ NEWLINE”
+        let newLine = function(word ,index){
+            storeCache(word);
+            switch(word.type){
+                case '\n' : 
+                    let val = '';
+                    cache.forEach((word)=>{
+                        val+=word.token
+                    })
+                    emitToken('NEWLINE',val);
+                    cache = [];
+                    return start; 
+                default :
+                    tokens.push(cache.shift());
+                    cache = [];
+                    return start(word);
+            }
+        }
+        // rule3 [code] : 遇到```标识时，将第一个TEXT标识为编程语言“LAG”,将前后“NEWLINE”之间的TEXT标识为“CODE”，之后单独封装函数对参数”LAG””CODE”做语法解析
+        let code = function(word){
+            // storeCache(word);
+            // switch(word.type){
+            //     case 'TEXT' :
+
+            // }
+        }
+        let reduce = 0;
+        let opt = start;
+        for(let i=0,word;word=this.tokens[i];i++){
+            opt = opt(word);
+        }
+        console.log(tokens);
    }
 }
 module.exports = {
