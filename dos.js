@@ -20,8 +20,13 @@ rl.on('line',(input)=>{
     }
     let mkp = new MKPraser(data);
     mkp.lexicalAnalysis();
-    console.log(mkp.getTokens());
-    mkp.optimizeToken();
-   // console.log(mkp.getTokens());
+    // console.log(mkp.getTokens());
+    mkp.optimizeToken().then(function(){
+        console.log(mkp.getTokens());
+    }).then(function(){
+        mkp.syntaxAnalysis();
+        console.log(JSON.stringify(mkp.getTnode()));
+    });
+    
 })
 

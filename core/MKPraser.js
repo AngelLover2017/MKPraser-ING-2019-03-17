@@ -6,12 +6,19 @@ class MKPraser{
         /*
          * data 输入的字符序列
          * tokens 输出的token流
+         * tnode 抽象语法树 
         */
         this.data = input+'\r\n';
         this.tokens = [];
+        this.tnode = {
+            tree : null
+        };
     }
     getTokens(){
         return this.tokens;
+    }
+    getTnode(){
+        return this.tnode;
     }
     /*
      * lexicalAnalysis 词法分析过程
@@ -376,42 +383,32 @@ class MKPraser{
        }
    }
    /* 
-    * Token流序列优化处理
+    * Token流序列优化处理-1
     */
-   optimizeToken(){
+   optimizeToken1(){
         let tokens = [];
         let cache = [];
-        let storeCache = function(word){
+        const storeCache = function(word){
             cache.push(word);
         }
-        let emitToken = function(type , token){
+        const emitToken = function(type , token){
             tokens.push({
                 type : type,
                 token : token
             })
         }
-        // let replaceTokens = function(type,value){
-        //     let val = '';
-        //     cache.forEach((word)=>{
-        //         val+=word.token
-        //     })
-        //     tokens.splice(cache.shift().index, cache.length , {
-        //         type : type,
-        //         token : val
-        //     })
-        // }
         //开始扫描token流序列
-        let start = function(word){
+        const start = function(word){
             storeCache(word);
             switch(word.type){
                 case 'TEXT' :
                     return mergeText;
                 case '\r' :
                     return newLine;
-                case '```' : 
-                    tokens.push(word);
-                    cache = [];
-                    return code;
+                case 'DIVIDELINE' : 
+                    return divideline;
+                case 'NEWLINE' :  
+                    return split;
                 default : 
                     cache = [];
                     tokens.push(word);
@@ -419,7 +416,7 @@ class MKPraser{
             }
         }
         //rule1 [mergeText] : 多个TEXT文本类型可以合并为一个TEXT合并
-        let mergeText = function(word){
+        const mergeText = function(word){
             storeCache(word);
             switch(word.type){
                 case 'TEXT' : 
@@ -437,7 +434,7 @@ class MKPraser{
             }
         }
         // rule2 [newLine] :  \r\n可以合并为一个分隔不同行的标识 “ NEWLINE”
-        let newLine = function(word ,index){
+        const newLine = function(word ,index){
             storeCache(word);
             switch(word.type){
                 case '\n' : 
@@ -454,20 +451,432 @@ class MKPraser{
                     return start(word);
             }
         }
-        // rule3 [code] : 遇到```标识时，将第一个TEXT标识为编程语言“LAG”,将前后“NEWLINE”之间的TEXT标识为“CODE”，之后单独封装函数对参数”LAG””CODE”做语法解析
-        let code = function(word){
-            // storeCache(word);
-            // switch(word.type){
-            //     case 'TEXT' :
-
-            // }
+        //rule3 [divideline] : 相邻DIVIDELINE合并为一个DIVIDELINE
+        const divideline = function(word){
+            storeCache(word);
+            switch(word.type){
+                case 'DIVIDELINE' : 
+                    return divideline;
+                default : 
+                    cache.pop();
+                    //合并
+                    let val = '';
+                    for(let word of cache){
+                        val += word.token;
+                    }
+                    emitToken('DIVIDELINE',val);
+                    cache = [];
+                    return start(word);
+            }
         }
         let reduce = 0;
         let opt = start;
         for(let i=0,word;word=this.tokens[i];i++){
             opt = opt(word);
         }
-        console.log(tokens);
+        //结尾的换行符作为文件结束符
+        tokens[tokens.length-1]= {
+            type : 'END',
+            token : '\r\n'
+        };
+        this.tokens = tokens;
+   }    
+   /* 
+   * Token流序列优化处理-2
+   * 优化标题，标记出标题的换行
+   */
+  optimizeToken2(){    
+       let tokens = this.tokens;
+       tokens.forEach((ele,index)=>{
+            if(['H1','H2','H3','H4','H5','H6'].some(v=>{
+                return v == ele.type
+            })){
+                let i = index+1;
+                while(tokens[i].type != 'NEWLINE')i++;
+                tokens[i] = {
+                    type : 'SPLIT',
+                    token : '\r\n\r\n'
+                }
+            }
+       })
+       this.tokens = tokens;
+  }
+
+    /* 
+    * Token流序列优化处理-3
+    * 优化段落的分隔符，去掉不必要的换行
+    */
+   optimizeToken3(){    
+        let tokens = [];
+        let cache = [];
+        const storeCache = function(word){
+            cache.push(word);
+        }
+        const emitToken = function(type , token){
+            tokens.push({
+                type : type,
+                token : token
+            })
+        }
+        //开始扫描token流序列
+        const start = function(word){
+            storeCache(word);
+            switch(word.type){
+                case 'NEWLINE' :  
+                    return split;
+                default : 
+                    cache = [];
+                    tokens.push(word);
+                    return start;
+            }
+        }
+        //rule4 [split] : 段落分隔符，连着2个以上的NEWLINE合并为SPLIT,用来分隔段落；单独一个NEWLINE删除
+        const split = function(word){
+            storeCache(word);
+            switch(word.type){
+                case 'NEWLINE' : 
+                    return split;
+                default : 
+                    cache.pop();
+                    if(cache.length >= 2){
+                        //两个或两个NEWLINE以上，则加入，否则忽略
+                         emitToken('SPLIT','\r\n\r\n');
+                    }
+                    cache = [];
+                    return start(word);
+            }
+        }
+        let reduce = 0;
+        let opt = start;
+        for(let i=0,word;word=this.tokens[i];i++){
+            opt = opt(word);
+        }
+        this.tokens = tokens;
+   }
+   /**
+    * Token流序列优化处理-
+    */
+   optimizeToken(){
+       //异步变同步
+       let that = this;
+       return new Promise(function(resolve,reject){
+           that.optimizeToken1();
+           resolve();
+       }).then(function(){
+           that.optimizeToken2();
+       }).then(function(){
+           that.optimizeToken3();
+       });
+   }
+   /* 
+    * syntaxAnalysis 语法分析过程
+    * 递归下降分析
+   */
+   syntaxAnalysis(){
+       let tokens = this.tokens;
+       let index = 0;
+       const match = (tokenExpected)=>{
+           //匹配到预期token，指针向前移动一位
+           let val = tokens[index];
+           if( val.type == tokenExpected){
+               index += 1;
+               return val.token;
+           }else{
+               console.log('[error:tokenUnExpected '+tokenExpected+']:what expected is '+tokens[index].type);
+               return 0;
+           }
+       }
+       /* article 文章 */
+       const article = ()=>{
+           let article = {
+               nodeType : 'article',
+               child : []
+           };
+           let i = 0;
+           //未到文件结尾
+           while(tokens[index].type != 'END'){
+                article.child[i] = section();
+                i++;
+           }
+           match('END');
+           return article;
+       }
+       /* section 章节 */
+       const section = ()=>{
+           let section = {
+               nodeType : 'section',
+               child : []
+           };
+           //如果当前token是标题
+           if(['H1','H2','H3','H4','H5','H6'].some(val=>{
+               return val == tokens[index].type;
+           })){
+               section.child[0] = head();
+           }
+           //只要不是标题或文件结尾，都可以一直匹配
+            while(['H1','H2','H3','H4','H5','H6','END'].every(val=>{
+                return val!=tokens[index].type;
+            })){
+                section.child[1] = paragraph();
+            }
+            return section;
+       }
+       /* head 标题 */
+       const head = ()=>{
+           let head = {
+               nodeType : 'head',
+               level : null,
+               child : null
+           }
+           head.level = match(tokens[index].type);
+           head.child = sentence();
+           //识别SPLIT
+           if(tokens[index].type == 'SPLIT'){
+               match('SPLIT');
+           }
+           return head;
+       }
+       /* paragraph 段落 */
+       const paragraph = ()=>{
+            let paragraph = {
+                nodeType : 'paragraph',
+                child : []
+            };
+            let i = 0; //标记位置
+            let paragraph_First = [
+                'EM','STRONG','EMSTRONG','`',
+                'TEXT','```','!','[','<','>>',
+                'OL','UL','DIVIDELINE'
+            ];
+            //在paragraph的first集合中
+            while(paragraph_First.some(val=>{
+                return val == tokens[index].type
+            })){
+                let res = null;
+                switch(tokens[index].type){
+                    case 'EM' : 
+                        res = sentence(); 
+                        break;
+                    case 'STRONG' : 
+                        res = sentence();
+                        break;
+                    case 'EMSTRONG' : 
+                        res = sentence();
+                        break;
+                    case '`' : 
+                        res = sentence();
+                        break;
+                    case 'TEXT' :
+                        res = sentence();
+                        break;
+                    case '```' : 
+                        res = blockcode();
+                        break;
+                    case '!' : 
+                        res = img();
+                        break;
+                    case '[' : 
+                        res = altlink();
+                        break;
+                    case '<' :
+                        res = simlink();
+                        break;
+                    case '>>' :
+                        res = quote();
+                        break;
+                    case 'OL' : 
+                        res = olist();
+                        break;
+                    case 'UL' :
+                        res = ulist();
+                        break;
+                    case 'DIVIDELINE' :
+                        res = {};
+                        res.nodeType = 'DIVIDELINE';
+                        res.text = match('DIVIDELINE');
+                        break;
+                }
+                paragraph.child[i] = res;
+                i++;
+            }
+            //一个paragraph识别一个SPLIT
+            if(tokens[index].type == 'SPLIT'){
+                match('SPLIT');
+            }
+            return paragraph;
+       }
+       /* sentence */
+       const sentence = ()=>{
+            let sentence = {
+                nodeType : 'sentence',
+                child : []
+            };
+            let i = 0;
+            let sentence_first = [
+                'EM','STRONG','EMSTRONG',
+                'TEXT','`'
+            ];
+            while(sentence_first.some(val=>{
+                return val == tokens[index].type;
+            })){
+                let res = null;
+                switch(tokens[index].type){
+                    case 'EM' :
+                        res = style();
+                        break;
+                    case 'STRONG' :
+                        res = style();
+                        break;
+                    case 'EMSTRONG' :
+                        res = style();
+                        break;
+                    case 'TEXT' : 
+                        res = {};
+                        res.nodeType = 'text';
+                        res.text = match('TEXT');
+                        break;
+                    case '`' : 
+                        res = inlinecode();
+                        break;
+                }
+                sentence.child[i] = res;
+                i++;
+            }
+            return sentence;
+       }
+       /* inlinecode */
+       const inlinecode = ()=>{
+           let inlinecode = {
+               nodeType : 'inlinecode',
+               text : null
+           };
+           match('`');
+           inlinecode.text = match('TEXT');
+           match('`');
+           return inlinecode;
+       }
+       /* style */
+       const style = ()=>{
+           let style = {
+               nodeType : 'style',
+               sign : null,
+               text : null
+           }
+           let style_first = [
+               'EM','STRONG','EMSTRONG'
+           ];
+           if(style_first.some(val=>{
+               return val == tokens[index].type
+           })){
+               style.sign = match(tokens[index].type);
+           }
+           style.text = match('TEXT');
+           if(style_first.some(val=>{
+            return val == tokens[index].type
+            })){
+                match(tokens[index].type);
+            }
+            return style;
+       }
+       /* blockcode */
+       const blockcode = ()=>{
+           let blockcode = {
+               nodeType : 'blockcode',
+               lag : null,
+               code : null
+           }
+           match('```');
+           //语言类型可有可无
+           if(tokens[index].type == 'TEXT'){
+                blockcode.lag = match('TEXT');
+           }
+           //SPLIT也是可有可无
+           if(tokens[index].type == 'SPLIT'){
+                match('SPLIT');
+           }
+           blockcode.code = match('TEXT');
+           //SPLIT也是可有可无
+           if(tokens[index].type == 'SPLIT'){
+                match('SPLIT');
+           }
+           match('```');
+           return blockcode;
+        }
+       /* img */
+       const img = ()=>{
+           let img = {
+               nodeType : 'img',
+               text : null,
+               url : null
+           }
+           match('!');
+           match('[');
+           img.text = match('TEXT');
+           match(']');
+           match('(');
+           img.url = match('URL');
+           match(')');
+           return img;
+       }
+       /* altlink */
+       const altlink = ()=>{
+           let altlink = {
+               nodeType : 'altlink',
+               text : null,
+               url : null
+           }
+           match('[');
+           altlink.text = match('TEXT');
+           match(']');
+           match('(');
+           altlink.url = match('URL');
+           match(')');
+           return altlink;
+       }
+       /* simlink */
+       const simlink = ()=>{
+           let simlink = {
+               nodeType : 'simlink',
+               url : null
+           }
+           match('<');
+           simlink.url = match('URL');
+           match('>');
+           return simlink;
+       }
+       /* quote */
+       const quote = ()=>{
+           let quote = {
+                nodeType : 'quote',
+                child : null
+           }
+           match('>>');
+           quote.child = sentence();
+           return quote;
+       }
+       /* olist */
+       const olist = ()=>{
+           let olist = {
+                nodeType : 'olist',
+                child : null
+           }
+           match('OL');
+           olist.child = sentence();
+           return olist;
+       }
+       /* ulist */
+       const ulist = ()=>{
+           let ulist = {
+                nodeType : 'ulist',
+                child : null
+           }
+           match('UL');
+           ulist.child = sentence();
+           return ulist;
+       }
+
+       //主控程序:执行递归下降分析
+       this.tnode.tree = article();
    }
 }
 module.exports = {
