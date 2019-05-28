@@ -25,7 +25,7 @@ rl.on('line',(input)=>{
         console.log(mkp.getTokens());
     }).then(function(){
         mkp.syntaxAnalysis();
-        console.log(JSON.stringify(mkp.getTnode()));
+        console.log(JSON.stringify(mkp.getVnode()));
     });
     
 })

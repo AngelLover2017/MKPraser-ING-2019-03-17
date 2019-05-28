@@ -10,15 +10,13 @@ class MKPraser{
         */
         this.data = input+'\r\n';
         this.tokens = [];
-        this.tnode = {
-            tree : null
-        };
+        this.vnode = {};
     }
     getTokens(){
         return this.tokens;
     }
-    getTnode(){
-        return this.tnode;
+    getVnode(){
+        return this.vnode;
     }
     /*
      * lexicalAnalysis 词法分析过程
@@ -569,7 +567,7 @@ class MKPraser{
        });
    }
    /* 
-    * syntaxAnalysis 语法分析过程
+    * syntaxAnalysis 语法分析过程,构建Vnode
     * 递归下降分析
    */
    syntaxAnalysis(){
@@ -589,7 +587,10 @@ class MKPraser{
        /* article 文章 */
        const article = ()=>{
            let article = {
-               nodeType : 'article',
+               nodeName : 'article',
+               attributes : {
+
+               },
                child : []
            };
            let i = 0;
@@ -604,7 +605,10 @@ class MKPraser{
        /* section 章节 */
        const section = ()=>{
            let section = {
-               nodeType : 'section',
+               nodeName : 'section',
+               attributes : {
+
+               },
                child : []
            };
            //如果当前token是标题
@@ -624,11 +628,13 @@ class MKPraser{
        /* head 标题 */
        const head = ()=>{
            let head = {
-               nodeType : 'head',
-               level : null,
+               nodeName : 'head',
+               attributes : {
+
+                },
                child : null
            }
-           head.level = match(tokens[index].type);
+           head.nodeName = 'h'+match(tokens[index].type).length;
            head.child = sentence();
            //识别SPLIT
            if(tokens[index].type == 'SPLIT'){
@@ -639,7 +645,10 @@ class MKPraser{
        /* paragraph 段落 */
        const paragraph = ()=>{
             let paragraph = {
-                nodeType : 'paragraph',
+                nodeName : 'p',
+                attributes : {
+
+                },
                 child : []
             };
             let i = 0; //标记位置
@@ -691,9 +700,7 @@ class MKPraser{
                         res = ulist();
                         break;
                     case 'DIVIDELINE' :
-                        res = {};
-                        res.nodeType = 'DIVIDELINE';
-                        res.text = match('DIVIDELINE');
+                        res = divideline();
                         break;
                 }
                 paragraph.child[i] = res;
@@ -705,10 +712,24 @@ class MKPraser{
             }
             return paragraph;
        }
+       /* divideline */
+       const divideline = ()=>{
+           let divideline = {
+               nodeName : 'hr',
+               attributes : {
+
+               }
+           }
+           match('DIVIDELINE');
+           return divideline;
+       }
        /* sentence */
        const sentence = ()=>{
             let sentence = {
-                nodeType : 'sentence',
+                nodeName : 'span',
+                attributes : {
+
+                },
                 child : []
             };
             let i = 0;
@@ -732,8 +753,8 @@ class MKPraser{
                         break;
                     case 'TEXT' : 
                         res = {};
-                        res.nodeType = 'text';
-                        res.text = match('TEXT');
+                        res.nodeName = 'text';
+                        res.text = text();
                         break;
                     case '`' : 
                         res = inlinecode();
@@ -747,33 +768,53 @@ class MKPraser{
        /* inlinecode */
        const inlinecode = ()=>{
            let inlinecode = {
-               nodeType : 'inlinecode',
-               text : null
+               nodeName : 'code',
+               attributes : {
+
+               },
+               child : null
            };
            match('`');
-           inlinecode.text = match('TEXT');
+           inlinecode.child = text();
            match('`');
            return inlinecode;
        }
        /* style */
        const style = ()=>{
            let style = {
-               nodeType : 'style',
-               sign : null,
-               text : null
+               nodeName : 'style',
+               attributes : {
+
+                },
+               child : null
            }
            let style_first = [
                'EM','STRONG','EMSTRONG'
            ];
-           if(style_first.some(val=>{
-               return val == tokens[index].type
-           })){
-               style.sign = match(tokens[index].type);
+           if(style_first.includes(tokens[index].type)){
+               switch(match(tokens[index].type)){
+                    case 'EM' :
+                        style.nodeName = 'em' ;
+                        break;
+                    case 'STRONG' : 
+                        style.nodeName = 'strong';
+                    case 'EMSTRONG' : 
+                        style.nodeName = 'em';
+                        style.child = {
+                            nodeName : 'strong',
+                            attributes : {
+
+                            },
+                            child : null
+                        }
+                        break;
+               };
            }
-           style.text = match('TEXT');
-           if(style_first.some(val=>{
-            return val == tokens[index].type
-            })){
+           let child = text();
+           if(!style.child)style.child.child = child;
+           else style.child = child;
+
+           if(style_first.includes(tokens[index].type)){
                 match(tokens[index].type);
             }
             return style;
@@ -781,20 +822,22 @@ class MKPraser{
        /* blockcode */
        const blockcode = ()=>{
            let blockcode = {
-               nodeType : 'blockcode',
-               lag : null,
-               code : null
+               nodeName : 'pre',
+               attributes : {
+
+                },
+               child : []
            }
            match('```');
            //语言类型可有可无
            if(tokens[index].type == 'TEXT'){
-                blockcode.lag = match('TEXT');
+                blockcode.child[0] = text();
            }
            //SPLIT也是可有可无
            if(tokens[index].type == 'SPLIT'){
                 match('SPLIT');
            }
-           blockcode.code = match('TEXT');
+           blockcode.child[1] = text();
            //SPLIT也是可有可无
            if(tokens[index].type == 'SPLIT'){
                 match('SPLIT');
@@ -805,49 +848,68 @@ class MKPraser{
        /* img */
        const img = ()=>{
            let img = {
-               nodeType : 'img',
-               text : null,
-               url : null
+               nodeName : 'img',
+               attributes : {
+
+               },
+               child : []
            }
            match('!');
            match('[');
-           img.text = match('TEXT');
+           img.child[0] = text();
            match(']');
            match('(');
-           img.url = match('URL');
+           img.child[1] = URL();
            match(')');
            return img;
        }
        /* altlink */
        const altlink = ()=>{
            let altlink = {
-               nodeType : 'altlink',
-               text : null,
-               url : null
+               nodeName : 'a',
+               attributes : {
+
+                },
+                child : []
            }
            match('[');
-           altlink.text = match('TEXT');
+           altlink.child[0] = text();
            match(']');
            match('(');
-           altlink.url = match('URL');
+           altlink.child[1] = URL();
            match(')');
            return altlink;
        }
        /* simlink */
        const simlink = ()=>{
            let simlink = {
-               nodeType : 'simlink',
-               url : null
+               nodeName : 'a',
+               attributes : {
+
+               },
+               child : null
            }
            match('<');
-           simlink.url = match('URL');
+           simlink.child = URL();
            match('>');
            return simlink;
+       }
+       /* URL */
+       const URL = ()=>{
+            let url = {
+                nodeName : 'text',
+                text : null
+            }
+            url.text = match('URL');
+            return url;
        }
        /* quote */
        const quote = ()=>{
            let quote = {
-                nodeType : 'quote',
+                nodeName : 'blockquote',
+                attributes : {
+
+                },
                 child : null
            }
            match('>>');
@@ -857,7 +919,10 @@ class MKPraser{
        /* olist */
        const olist = ()=>{
            let olist = {
-                nodeType : 'olist',
+                nodeName : 'li',
+                attributes : {
+
+                },
                 child : null
            }
            match('OL');
@@ -867,16 +932,77 @@ class MKPraser{
        /* ulist */
        const ulist = ()=>{
            let ulist = {
-                nodeType : 'ulist',
+                nodeName : 'li',
+                attributes : {
+
+                },
                 child : null
            }
            match('UL');
            ulist.child = sentence();
            return ulist;
        }
+       /* text */
+       const text = ()=>{
+           let text = {
+               nodeName : 'text',
+               text : null
+           }
+           text.text = match('TEXT');
+           return text;
+       }
 
        //主控程序:执行递归下降分析
-       this.tnode.tree = article();
+       this.vnode = article();
+   }
+
+    /**
+    * 前序遍历语法分析树，构建DOM结构
+    */
+   generateDOM(){
+
+        let createDOM = function(treeNode){
+            
+        }
+        //定义数据结构
+        let track = [];
+        const map = new WeakMap();
+        //初始化
+        let treeNode = this.vnode;
+        treeNode.dom = createDOM(treeNode);
+        let DOM = treeNode.dom;
+        track.push(treeNode);
+        map.set(treeNode,0);
+        while(track.length > 0){
+            //去栈顶元素，并判断下一个应访问第几个孩子
+            let top = track[track.length-1];
+            if(top.child instanceof Array){
+                //栈顶是数组的话
+                let index = map.get(top);
+                //改变Map状态
+                if(index < top.child.length-1){
+                    //若还有孩子没有访问，则记录状态
+                    map.set(top,index+1);
+                }else{
+                    //否则栈顶出栈
+                    track.pop();
+                }
+                treeNode = top.child[index];
+            }else {
+                //若栈顶是元素
+                track.pop();
+                if(top.child){
+                    treeNode = top.child;
+                }else continue;
+            }
+            
+            treeNode.dom = createDOM(treeNode);
+            top.dom.appendChild(treeNode.dom);
+            //当前节点压入栈
+            track.push(treeNode);
+            map.set(treeNode,0);
+        }
+        return DOM;
    }
 }
 module.exports = {
